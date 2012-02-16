@@ -159,17 +159,17 @@ def get_defaults_dist():
 	dists = Options.get('default', 'enabled')
 	return dists
 
-usage():
+def usage():
 	print('Usage: wanna-build-updatedb [<distribution1> [<distribution2> ...]]\n')
 	exit(-1)
 
 
-update_dists(dists):
+def update_dists(dists):
 	for d in dists:
 		UpdateDB(d)
 
 if __name__=='__main__':
-	if len(sys.argv)=1:
+	if len(sys.argv)==1:
 		dists = get_defaults_dist()
 		update_dists(dists)
 	else:
