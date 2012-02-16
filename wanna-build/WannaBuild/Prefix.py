@@ -19,11 +19,11 @@
 
 ## Some path, will be replaced by CMake when install.
 
-Prefix = '.'
-confdir = Prefix + '/etc/dwanna-buildd/'
-sysconffile = Prefix + '/etc/dwanna-buildd/wanna.conf'
-userconfdir = '~/.dwanna-buildd/'
-userconffile = '~/.dwanna-buildd/wanna.conf'
-distdir = Prefix + '/etc/dwanna-buildd/distributions/'
-dbdir = '~/.dwanna-buildd/database/'
+Prefix = ''
+confdir = Prefix + '/etc/buildd/'
+sysconffile = Prefix + '/etc/buildd/wanna.conf'
+userconfdir = '~/.buildd/'
+userconffile = '~/.buildd/wanna.conf'
+distdir = Prefix + '/etc/buildd/distributions/'
+dbdir = '~/.buildd/database/'
 dbfile = dbdir + 'stats.db'

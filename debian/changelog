@@ -1,0 +1,5 @@
+buildd (0.0.1) unstable; urgency=low
+
+  * Initial release (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+
+ -- 苏运强 <syq@syq-laptop>  Fri, 17 Feb 2012 00:05:57 +0800

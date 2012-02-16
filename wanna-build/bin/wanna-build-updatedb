@@ -30,30 +30,37 @@ import time
 
 
 class UpdateDB:
-	
-	
+	cfg=Config()
+	lock=LockDB()
 	def __init__(self, dist):
 		self.dist=dist
 		self.archive_dir = os.path.expanduser('%s/archive/%s/' % (userconfdir, self.dist))
+		self.db_dir = os.path.expanduser('%s/database/' % userconfdir)
+		self.make_sure_dirs([self.archive_dir, self.db_dir])
+		self.sync_meta()
 		self.update_src(self.dist)
 		self.update_bin(self.dist)
 	
-	def sync_meta():
-		try:
-			os.makedirs(self.archive_dir)
-		except:
-			if (not sys.path.isdir(self.archive_dir)) or (not os.access(self.archive_dir, os.W_OK)):
-				print('%s is not an directory or can not be write.\n')
-				exit(-1)
-		distconf=Options.items(self.dist)
+	def make_sure_dirs(self, dirs):
+		for i in dirs:
+			try:
+				os.makedirs(i)
+			except:
+				if (not os.path.isdir(i)) or (not os.access(i, os.W_OK)):
+					print('%s is not an directory or can not be write.\n')
+					exit(-1)
+	
+	def sync_meta(self):
+		
+		distconf=self.cfg.items(self.dist)
 		os.system('ARCHIVE=%s DIST=%s DESTDIR=%s rsync-archive-meta' % (distconf['archive'], self.dist, self.archive_dir))
 	
-	def update_one_src(suit, comp):
-		LockDB.lock()
+	def update_one_src(self, suit, comp):
+		self.lock.lock()
 		try:  ### Can not open DB?
 			db = sqlite3.connect(os.path.expanduser(dbfile))
 		except:
-			LockDB.release()
+			self.lock.release()
 			print('Open DB error\n')
 			exit(-1)
 		c = db.cursor()
@@ -63,12 +70,12 @@ class UpdateDB:
 				stats TEXT, resource INT, urgency INT, timestamp INT)''', suit, comp)
 		except:
 			pass
-		f=gzip.open('%s/dists/%s/%s/source/Sources.gz' % (self.archive_dir, suit, comp))
+		f=gzip.open('%s/%s/%s/source/Sources.gz' % (self.archive_dir, suit, comp))
 		file_content = f.readlines()
 		source = {}
 		i=0
 		while i<len(file_content):
-			t=file_content[i]
+			t=file_content[i][0:-1]
 			if len(t)==0:
 				self.update_src_db(c, source, suit, comp)
 			elif t[-1]==':':
@@ -82,20 +89,21 @@ class UpdateDB:
 				pass
 			else:
 				tmp = t.split(': ')
-				source[tmp[0]]=source[tmp[1]]
+				source[tmp[0]]=tmp[1]
 			i+=1
 		
-		c.excution('''DELETE FROM ?_? where timestamp<?-86400''', 
+		c.execute('''DELETE FROM ?_? where timestamp<?-86400''', 
 			(suit, comp, int(time.time())))
 		c.commit()
-		LockDB.release()
+		db.close()
+		self.lock.release()
 	
-	def update_one_bin(suit, comp, arch):
-		LockDB.lock()
+	def update_one_bin(self, suit, comp, arch):
+		self.lock.lock()
 		try:  ### Can not open DB?
 			db = sqlite3.connect(os.path.expanduser(dbfile))
 		except:
-			LockDB.release()
+			self.lock.release()
 			print('Open DB error\n')
 			exit(-1)
 		c = db.cursor()
@@ -104,7 +112,7 @@ class UpdateDB:
 			c.execute('''CREATE TABLE ?_?_bin (name TEXT, version TEXT, arch TEXT, timestamp INT)''', suit, comp)
 		except:
 			pass
-		f=gzip.open('%s/dists/%s/%s/binary-%s/Packages.gz' % (self.archive_dir, suit, comp, arch))
+		f=gzip.open('%s/%s/%s/binary-%s/Packages.gz' % (self.archive_dir, suit, comp, arch))
 		file_content = f.readlines()
 		source = {}
 		i=0
@@ -114,49 +122,52 @@ class UpdateDB:
 				self.update_bin_db(c, source, suit, comp)
 			else:
 				tmp = t.split(': ')
-				source[tmp[0]]=source[tmp[1]]
+				source[tmp[0]]=tmp[1]
 			i+=1
 		
-		c.excution('''DELETE FROM ?_? where timestamp<?-86400''', 
+		c.execute('''DELETE FROM ?_? where timestamp<?-86400''', 
 			(suit, comp, int(time.time())))
 		c.commit()
+		db.close()
+		self.lock.release()
 	
-	def update_src(dist):
-		suits=Options.get(dist, 'suits').split(' ')
-		components=Options.get(dist, 'components').split(' ')
+	def update_src(self, dist):
+		suits=self.cfg.get(dist, 'suits').split(' ')
+		components=self.cfg.get(dist, 'components').split(' ')
 		for s in suits:
 			for c in components:
 				self.update_one_src(s, c)
 	
-	def update_bin(dist):
-		suits=Options.get(dist, 'suits').split(' ')
-		components=Options.get(dist, 'components').split(' ')
+	def update_bin(self, dist):
+		suits=self.cfg.get(dist, 'suits').split(' ')
+		components=self.cfg.get(dist, 'components').split(' ')
 		for s in suits:
-			archs=Options.get(dist, 'arch_'+s).split(' ')
+			archs=self.cfg.get(dist, 'arch_'+s).split(' ')
 			for c in components:
 				for a in archs:
 					self.update_one_bin(s, c, a)
 
 
-	def update_src_db(c, source, suit, comp):
+	def update_src_db(self, c, source, suit, comp):
 		try:
-			c.excution('''UPDATE ?_? SET version=? timestamp=? WHERE name=? ''', 
+			c.execute('''UPDATE ?_? SET version=? timestamp=? WHERE name=? ''', 
 				(suit, comp, source['Version'], int(time.time()), source['Package']))
 		except:
-			c.excution('''INSERT INTO ?_? (name, version, timestamp) VALUES (?, ?, ?)''', 
+			c.execute('''INSERT INTO ?_? (name,version,timestamp) VALUES (?,?,?)''', 
 				(suit, comp, source['Package'], source['Version'], int(time.time())))
 
-	def update_bin_db(c, source, suit, comp, arch):
+	def update_bin_db(self, c, source, suit, comp, arch):
 		try:
-			c.excution('''UPDATE ?_?_bin SET version=? timestamp=? WHERE name=? arch=? ''', 
+			c.execute('''UPDATE ?_?_bin SET version=? timestamp=? WHERE name=? arch=? ''', 
 				(suit, comp, source['Version'], int(time.time()), source['Package']))
 		except:
-			c.excution('''INSERT INTO ?_?_bin (name, version, arch, timestamp) VALUES (?, ?, ?, ?)''', 
+			c.execute('''INSERT INTO ?_?_bin (name, version, arch, timestamp) VALUES (?, ?, ?, ?)''', 
 				(suit, comp, source['Package'], source['Version'], arch, int(time.time())))
 
 
 def get_defaults_dist():
-	dists = Options.get('default', 'enabled')
+	cfg=Config()
+	dists = cfg.get('default', 'enabled')
 	return dists
 
 def usage():
@@ -170,7 +181,7 @@ def update_dists(dists):
 
 if __name__=='__main__':
 	if len(sys.argv)==1:
-		dists = get_defaults_dist()
-		update_dists(dists)
+		dist = get_defaults_dist()
+		UpdateDB(dist)
 	else:
 		update_dists(sys.argv[1:])

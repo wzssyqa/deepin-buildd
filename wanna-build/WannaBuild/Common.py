@@ -36,19 +36,26 @@ BuildStats={
 }
 
 class LockDB:
-	lock = FileLock('/tmp/dwanna-buildd-stats.db')
+	lk = FileLock('/tmp/dwanna-buildd-stats.db')
 	
-	def lock():
-		self.lock.acquire()
+	def lock(self):
+		self.lk.acquire()
 
-	def release():
-		self.lock.release()
+	def release(self):
+		self.lk.release()
 
-class Options:
-	config = ConfigParser.ConfigParser()
+class Config:
+	cfg = ConfigParser()
 	
 	def __init__(self):
-		self.config.read([sysconffile, os.path.expanduser(userconffile)])
+		self.cfg.read([sysconffile, os.path.expanduser(userconffile)])
 	
-	def get(section, key):
-		return self.config.get(section, key)
+	def get(self, section, key):
+		return self.cfg.get(section, key)
+	
+	def items(self, section):
+		tmp = self.cfg.items(section)
+		xxx={}
+		for i in tmp:
+			xxx[i[0]]=i[1]
+		return xxx
