@@ -64,7 +64,7 @@ class UpdateDB:
 		except:
 			pass
 		f=gzip.open('%s/dists/%s/%s/source/Sources.gz' % (self.archive_dir, suit, comp))
-		file_content = f.read()
+		file_content = f.readlines()
 		source = {}
 		i=0
 		while i<len(file_content):
@@ -105,7 +105,7 @@ class UpdateDB:
 		except:
 			pass
 		f=gzip.open('%s/dists/%s/%s/binary-%s/Packages.gz' % (self.archive_dir, suit, comp, arch))
-		file_content = f.read()
+		file_content = f.readlines()
 		source = {}
 		i=0
 		while i<len(file_content):
