@@ -27,21 +27,16 @@ import sys
 import gzip
 import time
 
-def update_src_db(c, source, suit, comp):
-	try:
-		c.excution('''UPDATE ?_? SET version=? timestamp=? WHERE name=? ''', 
-				(suit, comp, source['Version'], int(time.time()), source['Package']))
-	except:
-		c.excution('''INSERT INTO ?_? (name, version, timestamp) VALUES (?, ?, ?)''', 
-				(suit, comp, source['Package'], source['Version'], int(time.time())))
+
 
 class UpdateDB:
+	
 	
 	def __init__(self, dist):
 		self.dist=dist
 		self.archive_dir = os.path.expanduser('%s/archive/%s/' % (userconfdir, self.dist))
-		update_src(self.dist)
-		update_bin(self.dist)
+		self.update_src(self.dist)
+		self.update_bin(self.dist)
 	
 	def sync_meta():
 		try:
@@ -53,7 +48,7 @@ class UpdateDB:
 		distconf=Options.items(self.dist)
 		os.system('ARCHIVE=%s DIST=%s DESTDIR=%s rsync-archive-meta' % (distconf['archive'], self.dist, self.archive_dir))
 	
-	def update_src():
+	def update_one_src(suit, comp):
 		LockDB.lock()
 		try:  ### Can not open DB?
 			db = sqlite3.connect(os.path.expanduser(dbfile))
@@ -68,15 +63,14 @@ class UpdateDB:
 				stats TEXT, resource INT, urgency INT, timestamp INT)''', suit, comp)
 		except:
 			pass
-		f=gzip.open('%s/dists/%s/%s/source/Sources.gz' % (archive_dir, suit, comp))
+		f=gzip.open('%s/dists/%s/%s/source/Sources.gz' % (self.archive_dir, suit, comp))
 		file_content = f.read()
 		source = {}
 		i=0
 		while i<len(file_content):
 			t=file_content[i]
 			if len(t)==0:
-				update_src_db(c, source, suit, comp)
-				continue
+				self.update_src_db(c, source, suit, comp)
 			elif t[-1]==':':
 				j=i+1
 				tmp=''
@@ -94,9 +88,71 @@ class UpdateDB:
 		c.excution('''DELETE FROM ?_? where timestamp<?-86400''', 
 			(suit, comp, int(time.time())))
 		c.commit()
+		LockDB.release()
+	
+	def update_one_bin(suit, comp, arch):
+		LockDB.lock()
+		try:  ### Can not open DB?
+			db = sqlite3.connect(os.path.expanduser(dbfile))
+		except:
+			LockDB.release()
+			print('Open DB error\n')
+			exit(-1)
+		c = db.cursor()
+		##### Update sid_main table, for source only
+		try: ### try to create table first.
+			c.execute('''CREATE TABLE ?_?_bin (name TEXT, version TEXT, arch TEXT, timestamp INT)''', suit, comp)
+		except:
+			pass
+		f=gzip.open('%s/dists/%s/%s/binary-%s/Packages.gz' % (self.archive_dir, suit, comp, arch))
+		file_content = f.read()
+		source = {}
+		i=0
+		while i<len(file_content):
+			t=file_content[i]
+			if len(t)==0:
+				self.update_bin_db(c, source, suit, comp)
+			else:
+				tmp = t.split(': ')
+				source[tmp[0]]=source[tmp[1]]
+			i+=1
+		
+		c.excution('''DELETE FROM ?_? where timestamp<?-86400''', 
+			(suit, comp, int(time.time())))
+		c.commit()
+	
+	def update_src(dist):
+		suits=Options.get(dist, 'suits').split(' ')
+		components=Options.get(dist, 'components').split(' ')
+		for s in suits:
+			for c in components:
+				self.update_one_src(s, c)
+	
+	def update_bin(dist):
+		suits=Options.get(dist, 'suits').split(' ')
+		components=Options.get(dist, 'components').split(' ')
+		for s in suits:
+			archs=Options.get(dist, 'arch_'+s).split(' ')
+			for c in components:
+				for a in archs:
+					self.update_one_bin(s, c, a)
 
 
+	def update_src_db(c, source, suit, comp):
+		try:
+			c.excution('''UPDATE ?_? SET version=? timestamp=? WHERE name=? ''', 
+				(suit, comp, source['Version'], int(time.time()), source['Package']))
+		except:
+			c.excution('''INSERT INTO ?_? (name, version, timestamp) VALUES (?, ?, ?)''', 
+				(suit, comp, source['Package'], source['Version'], int(time.time())))
 
+	def update_bin_db(c, source, suit, comp, arch):
+		try:
+			c.excution('''UPDATE ?_?_bin SET version=? timestamp=? WHERE name=? arch=? ''', 
+				(suit, comp, source['Version'], int(time.time()), source['Package']))
+		except:
+			c.excution('''INSERT INTO ?_?_bin (name, version, arch, timestamp) VALUES (?, ?, ?, ?)''', 
+				(suit, comp, source['Package'], source['Version'], arch, int(time.time())))
 
 
 def get_defaults_dist():
@@ -108,43 +164,9 @@ usage():
 	exit(-1)
 
 
-
-def update_bin_db():
-
-do_update_db(suit, comp, archive_dir):
-	
-	
-	# Update sid_main_bin table for bin
-	try:
-		c.execute('''CREATE TABLE ?_?_bin (name TEXT, version TEXT, arch TEXT, timestamp INT)''', suit, comp)
-	except:
-		pass
-	for arch in Options.get(dist, 'arch_'+suit):
-		f=gzip.open('%s/dists/%s/%s/binary-%s/Packages.gz' % (archive_dir, suit, comp, arch))
-		file_content = f.read()
-		source = {}
-		i=0
-		while i<len(file_content):
-			t=file_content[i]
-			if len(t)==0:
-				update_bin_db(c, source, suit, comp)
-				continue
-			else:
-				tmp = t.split(': ')
-				source[tmp[0]]=source[tmp[1]]
-			i+=1
-
-
-update_one_dist(dist):
-	
-	
-	for suit in Options.get(dist, 'suits').split(' '):
-		for comp in Options.get(dist, 'components').split(' '):
-			do_update_db(suit, comp, archive_dir)
-
 update_dists(dists):
 	for d in dists:
-		update_one_dist(d)
+		UpdateDB(d)
 
 if __name__=='__main__':
 	if len(sys.argv)=1:
