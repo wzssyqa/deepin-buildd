@@ -1,0 +1,8 @@
+#!/bin/bash
+
+RSYNC_OPTIONS="--delete --delete-excluded -av"
+
+MIRROR_EXCLUDES="--exclude=**/*.changes --exclude=**/installer-* --exclude=**/Packages.diff --exclude=**/Sources.diff --exclude=ChangeLog --exclude=**/Contents-* --exclude=**/Translation-* --exclude=**/*.bz2 --exclude=Packages --exclude=Sources --exclude=**/*.new" # the latter two because we only accept gziped files
+MIRROR_OPTIONS="$MIRROR_EXCLUDES $RSYNC_OPTIONS"
+
+rsync $MIRROR_OPTIONS ${ARCHIVE}::${DIST}/dists/ "${DESTDIR}"

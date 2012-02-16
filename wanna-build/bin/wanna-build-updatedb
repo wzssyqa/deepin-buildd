@@ -1,0 +1,154 @@
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+# Copyright (C) 2012 Deepin Inc.
+#
+# Author: YunQiang Su <wzssyqa@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 3 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
+
+from WannaBuild import *
+from WannaBuild.Common import *
+from WannaBuild.Prefix import *
+import sqlite3
+import os
+import syslog
+import sys
+import gzip
+import time
+
+def update_src_db(c, source, suit, comp):
+	try:
+		c.excution('''UPDATE ?_? SET version=? timestamp=? WHERE name=? ''', 
+				(suit, comp, source['Version'], int(time.time()), source['Package']))
+	except:
+		c.excution('''INSERT INTO ?_? (name, version, timestamp) VALUES (?, ?, ?)''', 
+				(suit, comp, source['Package'], source['Version'], int(time.time())))
+
+class UpdateDB:
+	
+	def __init__(self, dist):
+		self.dist=dist
+		self.archive_dir = os.path.expanduser('%s/archive/%s/' % (userconfdir, self.dist))
+		update_src(self.dist)
+		update_bin(self.dist)
+	
+	def sync_meta():
+		try:
+			os.makedirs(self.archive_dir)
+		except:
+			if (not sys.path.isdir(self.archive_dir)) or (not os.access(self.archive_dir, os.W_OK)):
+				print('%s is not an directory or can not be write.\n')
+				exit(-1)
+		distconf=Options.items(self.dist)
+		os.system('ARCHIVE=%s DIST=%s DESTDIR=%s rsync-archive-meta' % (distconf['archive'], self.dist, self.archive_dir))
+	
+	def update_src():
+		LockDB.lock()
+		try:  ### Can not open DB?
+			db = sqlite3.connect(os.path.expanduser(dbfile))
+		except:
+			LockDB.release()
+			print('Open DB error\n')
+			exit(-1)
+		c = db.cursor()
+		##### Update sid_main table, for source only
+		try: ### try to create table first.
+			c.execute('''CREATE TABLE ?_? (name TEXT, version TEXT, arch TEXT,
+				stats TEXT, resource INT, urgency INT, timestamp INT)''', suit, comp)
+		except:
+			pass
+		f=gzip.open('%s/dists/%s/%s/source/Sources.gz' % (archive_dir, suit, comp))
+		file_content = f.read()
+		source = {}
+		i=0
+		while i<len(file_content):
+			t=file_content[i]
+			if len(t)==0:
+				update_src_db(c, source, suit, comp)
+				continue
+			elif t[-1]==':':
+				j=i+1
+				tmp=''
+				while file_content[j][0]==' ':
+					tmp+=file_content[j]
+					j+=1
+				source[t[0:-1]]=tmp
+			elif t[0]==' ':
+				pass
+			else:
+				tmp = t.split(': ')
+				source[tmp[0]]=source[tmp[1]]
+			i+=1
+		
+		c.excution('''DELETE FROM ?_? where timestamp<?-86400''', 
+			(suit, comp, int(time.time())))
+		c.commit()
+
+
+
+
+
+def get_defaults_dist():
+	dists = Options.get('default', 'enabled')
+	return dists
+
+usage():
+	print('Usage: wanna-build-updatedb [<distribution1> [<distribution2> ...]]\n')
+	exit(-1)
+
+
+
+def update_bin_db():
+
+do_update_db(suit, comp, archive_dir):
+	
+	
+	# Update sid_main_bin table for bin
+	try:
+		c.execute('''CREATE TABLE ?_?_bin (name TEXT, version TEXT, arch TEXT, timestamp INT)''', suit, comp)
+	except:
+		pass
+	for arch in Options.get(dist, 'arch_'+suit):
+		f=gzip.open('%s/dists/%s/%s/binary-%s/Packages.gz' % (archive_dir, suit, comp, arch))
+		file_content = f.read()
+		source = {}
+		i=0
+		while i<len(file_content):
+			t=file_content[i]
+			if len(t)==0:
+				update_bin_db(c, source, suit, comp)
+				continue
+			else:
+				tmp = t.split(': ')
+				source[tmp[0]]=source[tmp[1]]
+			i+=1
+
+
+update_one_dist(dist):
+	
+	
+	for suit in Options.get(dist, 'suits').split(' '):
+		for comp in Options.get(dist, 'components').split(' '):
+			do_update_db(suit, comp, archive_dir)
+
+update_dists(dists):
+	for d in dists:
+		update_one_dist(d)
+
+if __name__=='__main__':
+	if len(sys.argv)=1:
+		dists = get_defaults_dist()
+		update_dists(dists)
+	else:
+		update_dists(sys.argv[1:])

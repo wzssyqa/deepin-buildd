@@ -1,0 +1,87 @@
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+# Copyright (C) 2012 Deepin Inc.
+#
+# Author: YunQiang Su <wzssyqa@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 3 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
+
+from WannaBuild import *
+from WannaBuild.Common import *
+import sqlite3
+import os
+import syslog
+import sys
+
+def say_error(errlog):
+	print(errlog)
+	syslog.syslog(errlog)
+
+def usage():
+	err_str='Usage: wanna-build <arch> <RESOURCE_AMOUNT> <machine-id>\n'
+	print(err_str)
+	syslog.syslog(err_str)
+	exit(-1)
+
+def check()
+	if len(sys.argv)!=4:
+		usage()
+	dbdir = os.path.expanduser('~/.dwanna-buildd/database/')
+	if not os.path.exists(dbdir):
+		os.makedirs(dbdir)
+	if os.path.isdir(dbdir) and os.access(dbdir, os.W_OK):
+		pass
+	else:
+		err_str='Check Directory %s !\n', % dbdir
+		print(err_str)
+		syslog.syslog(err_str)
+		exit(-1)
+	
+if __name__=='__main__':
+	check()
+	LockDB.lock()
+	try:  ### Can not open DB?
+		db = sqlite3.connect(os.path.expanduser('~/.dwanna-buildd/database/stats.db'))
+	except:
+		LockDB.release()
+		say_error('Open DB error\n')
+		os.system('wanna-build-gendb '+ os.path.expanduser('~/.dwanna-buildd/database/stats.db'))
+	c = db.cursor()
+	try:  ### No this table?
+		c.execute("SELECT * FROM packages WHERE stats=? arch=? resource<? ORDER BY urgency", 
+			(BuildStats['needs-build'], sys.argv[1], sys.argv[2]))
+	except:
+		db.close()
+		say_error('SELECT "needs-build" error\n')
+		LockDB.release()
+		os.system('wanna-build-gendb '+ os.path.expanduser('~/.dwanna-buildd/database/stats.db'))
+	
+	if len(c)>=1:
+		c.execute("UPDATE packages SET stats=? WHERE name=? version=? release=? arch=?", 
+			('building', c[0][0], c[0][1], c[0][3], c[0][4]))
+		err_str = 'BuildIt %s\n' % ' '.join(c[0])
+		say_error(err_str)
+		LockDB.release()
+		exit(0)
+	else:
+		c.execute("SELECT * FROM packages WHERE (stats=? OR stats=? OR stats=?) arch=? resource<? LIMIT 1", 
+			BuildStats['dep-wait'], BuildStats['BD-Uninstallable'], BuildStats['failed'],
+			sys.argv[1], sys.argv[2])
+		if len(c)==1:
+			c.execute("UPDATE packages SET stats=? WHERE name=? version=? release=? arch=?", 
+				('building', c[0][0], c[0][1], c[0][3], c[0][4]))
+			err_str = 'BuildIt %s\n' % ' '.join(c[0])
+			say_error(err_str)
+			LockDB.release()
+			exit(0)
