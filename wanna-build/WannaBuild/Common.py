@@ -22,6 +22,9 @@ from ConfigParser import ConfigParser
 from Prefix import *
 from lockfile import FileLock
 
+## string to replace '-' in table name.
+DashReplacer='syqa'
+
 BuildStats={
 	'needs-build':1,
 	
@@ -55,7 +58,7 @@ class Config:
 	
 	def items(self, section):
 		tmp = self.cfg.items(section)
-		xxx={}
+		ooxx={}
 		for i in tmp:
-			xxx[i[0]]=i[1]
-		return xxx
+			ooxx[i[0]]=i[1]
+		return ooxx

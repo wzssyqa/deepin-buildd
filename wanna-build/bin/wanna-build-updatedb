@@ -27,7 +27,25 @@ import sys
 import gzip
 import time
 
+def slice_packages(package_file):
+    package = {}
+    for line in package_file.readlines():
+        if line.strip() == "":
+            yield package
+            package = {} 
+        elif line[0] == ' ':
+            if (type(package[key]) is list):
+                package[key].append(line.strip())
+        elif line[0] != ' ':
+            key, val = line.strip().split(":", 1)
+            strip_val = val.strip()
+            package[key] = [] if strip_val == "" else strip_val
 
+def r_d(para):
+	return DashReplacer.join(para.split('-'))
+
+def unr_d(para):
+	return '-'.join(para.split(DashReplacer))
 
 class UpdateDB:
 	cfg=Config()
@@ -66,35 +84,17 @@ class UpdateDB:
 		c = db.cursor()
 		##### Update sid_main table, for source only
 		try: ### try to create table first.
-			c.execute('''CREATE TABLE ?_? (name TEXT, version TEXT, arch TEXT,
-				stats TEXT, resource INT, urgency INT, timestamp INT)''', suit, comp)
+			cmd='CREATE TABLE %s_%s (name TEXT, version TEXT, arch TEXT, stats TEXT, resource INT, urgency INT, timestamp INT)' % (r_d(suit), r_d(comp))
+			c.execute(cmd)
 		except:
 			pass
 		f=gzip.open('%s/%s/%s/source/Sources.gz' % (self.archive_dir, suit, comp))
-		file_content = f.readlines()
-		source = {}
-		i=0
-		while i<len(file_content):
-			t=file_content[i][0:-1]
-			if len(t)==0:
-				self.update_src_db(c, source, suit, comp)
-			elif t[-1]==':':
-				j=i+1
-				tmp=''
-				while file_content[j][0]==' ':
-					tmp+=file_content[j]
-					j+=1
-				source[t[0:-1]]=tmp
-			elif t[0]==' ':
-				pass
-			else:
-				tmp = t.split(': ')
-				source[tmp[0]]=tmp[1]
-			i+=1
+		for package in slice_packages(f):
+			self.update_src_db(c, package, suit, comp)
 		
-		c.execute('''DELETE FROM ?_? where timestamp<?-86400''', 
-			(suit, comp, int(time.time())))
-		c.commit()
+		cmd='DELETE FROM %s_%s where timestamp<%s-86400' % (r_d(suit), r_d(comp), int(time.time()))
+		c.execute(cmd)
+		db.commit()
 		db.close()
 		self.lock.release()
 	
@@ -109,61 +109,50 @@ class UpdateDB:
 		c = db.cursor()
 		##### Update sid_main table, for source only
 		try: ### try to create table first.
-			c.execute('''CREATE TABLE ?_?_bin (name TEXT, version TEXT, arch TEXT, timestamp INT)''', suit, comp)
+			cmd='CREATE TABLE %s_%s_bin (name TEXT, version TEXT, source TEXT, arch TEXT, timestamp INT)' % (r_d(suit), r_d(comp))
+			c.execute(cmd)
 		except:
 			pass
 		f=gzip.open('%s/%s/%s/binary-%s/Packages.gz' % (self.archive_dir, suit, comp, arch))
-		file_content = f.readlines()
-		source = {}
-		i=0
-		while i<len(file_content):
-			t=file_content[i]
-			if len(t)==0:
-				self.update_bin_db(c, source, suit, comp)
-			else:
-				tmp = t.split(': ')
-				source[tmp[0]]=tmp[1]
-			i+=1
+		for package in slice_packages(f):
+			self.update_bin_db(c, package, suit, comp)
 		
-		c.execute('''DELETE FROM ?_? where timestamp<?-86400''', 
-			(suit, comp, int(time.time())))
-		c.commit()
+		cmd='DELETE FROM %s_%s where timestamp<%s-86400' % (r_d(suit), r_d(comp), int(time.time()))
+		c.execute(cmd)
+		db.commit()
 		db.close()
 		self.lock.release()
 	
 	def update_src(self, dist):
 		suits=self.cfg.get(dist, 'suits').split(' ')
 		components=self.cfg.get(dist, 'components').split(' ')
-		for s in suits:
-			for c in components:
-				self.update_one_src(s, c)
+		for i in [[s,c] for s in suits for c in components]:
+			self.update_one_src(i[0], i[1])
 	
 	def update_bin(self, dist):
 		suits=self.cfg.get(dist, 'suits').split(' ')
 		components=self.cfg.get(dist, 'components').split(' ')
-		for s in suits:
-			archs=self.cfg.get(dist, 'arch_'+s).split(' ')
-			for c in components:
-				for a in archs:
-					self.update_one_bin(s, c, a)
-
+		for st in suits:
+			sm=st.split('-',1)
+			archs=self.cfg.get(dist, 'arch_'+sm[0]).split(' ')
+			for i in [[s, c, a] for s in [st] for c in components for a in archs]:
+					self.update_one_bin(i[0], i[1], i[2])
 
 	def update_src_db(self, c, source, suit, comp):
 		try:
-			c.execute('''UPDATE ?_? SET version=? timestamp=? WHERE name=? ''', 
-				(suit, comp, source['Version'], int(time.time()), source['Package']))
+			cmd='UPDATE %s_%s SET version="%s" timestamp="%s" WHERE name="%s"' % (r_d(suit), r_d(comp), source['Version'], int(time.time()), source['Package'])
+			c.execute(cmd)	
 		except:
-			c.execute('''INSERT INTO ?_? (name,version,timestamp) VALUES (?,?,?)''', 
-				(suit, comp, source['Package'], source['Version'], int(time.time())))
+			cmd='INSERT INTO %s_%s (name,version,timestamp) VALUES ("%s","%s",%s)' % (r_d(suit), r_d(comp), source['Package'], source['Version'], int(time.time()))
+			c.execute(cmd)
 
-	def update_bin_db(self, c, source, suit, comp, arch):
+	def update_bin_db(self, c, source, suit, comp):
 		try:
-			c.execute('''UPDATE ?_?_bin SET version=? timestamp=? WHERE name=? arch=? ''', 
-				(suit, comp, source['Version'], int(time.time()), source['Package']))
+			cmd='UPDATE %s_%s_bin SET version="%s" source="%s" timestamp=%s WHERE name="%s" arch="%s"' % (r_d(suit), r_d(comp), source['Version'], source['Source'], int(time.time()), source['Package'], source['Architecture'])
+			c.execute(cmd)
 		except:
-			c.execute('''INSERT INTO ?_?_bin (name, version, arch, timestamp) VALUES (?, ?, ?, ?)''', 
-				(suit, comp, source['Package'], source['Version'], arch, int(time.time())))
-
+			cmd='INSERT INTO %s_%s_bin (name, version, source, arch, timestamp) VALUES ("%s", "%s", "%s", "%s", %s)' % (r_d(suit), r_d(comp), source['Package'], source['Version'], source['Package'], source['Architecture'], int(time.time()))
+			c.execute(cmd)
 
 def get_defaults_dist():
 	cfg=Config()
